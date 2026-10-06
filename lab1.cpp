@@ -110,36 +110,40 @@ void blas_dgemm(int M, int N, int K, double* A, double* B, double* C)
 // ============================================================
 int main()
 {
-    const int N = 2;   // ← маленькая матрица
+    const int N = 1000;
 
-    // Выделяем
+    srand(42);
+
     double* A = alloc_matrix(N);
     double* B = alloc_matrix(N);
-    double* C = alloc_matrix(N);
+    double* C_seq = alloc_matrix(N);
+    double* C_par = alloc_matrix(N);
 
-    // Задаём ВРУЧНУЮ известные значения (column-major!)
-    // A = [[1, 2],       в column-major: [1, 3, 2, 4]
-    //      [3, 4]]
-    A[0] = 1; A[1] = 3; A[2] = 2; A[3] = 4;
+    init_matrix(A, N);
+    init_matrix(B, N);
+    zero_matrix(C_seq, N);
+    zero_matrix(C_par, N);
 
-    // B = [[5, 6],       в column-major: [5, 7, 6, 8]
-    //      [7, 8]]
-    B[0] = 5; B[1] = 7; B[2] = 6; B[3] = 8;
+    // Последовательно
+    double t1 = omp_get_wtime();
+    dgemm_seq(N, N, N, A, B, C_seq);
+    double t2 = omp_get_wtime();
 
-    // Обнуляем C
-    zero_matrix(C, N);
+    // Параллельно
+    double t3 = omp_get_wtime();
+    blas_dgemm(N, N, N, A, B, C_par);
+    double t4 = omp_get_wtime();
 
-    // Считаем
-    dgemm_seq(N, N, N, A, B, C);
+    // Сравнение
+    double diff = compare_matrices(C_seq, C_par, N);
 
-    // Выводим результат
-    printf("C[0][0] = %f (wait 19)\n", C[0 * N + 0]);
-    printf("C[0][1] = %f (wait 22)\n", C[1 * N + 0]);
-    printf("C[1][0] = %f (wait 43)\n", C[0 * N + 1]);
-    printf("C[1][1] = %f (wait 50)\n", C[1 * N + 1]);
+    printf("N = %d\n", N);
+    printf("Sequential: %.4f sec\n", t2 - t1);
+    printf("Parallel:   %.4f sec\n", t4 - t3);
+    printf("Speedup:    %.2fx\n", (t2 - t1) / (t4 - t3));
+    printf("Max diff:   %e\n", diff);
+    printf("Threads:    %d\n", omp_get_max_threads());
 
-    free(A);
-    free(B);
-    free(C);
+    free(A); free(B); free(C_seq); free(C_par);
     return 0;
 }
