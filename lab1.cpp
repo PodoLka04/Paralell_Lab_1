@@ -80,24 +80,36 @@ void blas_dgemm(int M, int N, int K, double* A, double* B, double* C)
 // ============================================================
 int main()
 {
-    const int N = 4;   // маленький размер для проверки
+    const int N = 2;   // ← маленькая матрица
 
-    srand(42);
-
+    // Выделяем
     double* A = alloc_matrix(N);
     double* B = alloc_matrix(N);
     double* C = alloc_matrix(N);
 
-    init_matrix(A, N);
-    init_matrix(B, N);
+    // Задаём ВРУЧНУЮ известные значения (column-major!)
+    // A = [[1, 2],       в column-major: [1, 3, 2, 4]
+    //      [3, 4]]
+    A[0] = 1; A[1] = 3; A[2] = 2; A[3] = 4;
+
+    // B = [[5, 6],       в column-major: [5, 7, 6, 8]
+    //      [7, 8]]
+    B[0] = 5; B[1] = 7; B[2] = 6; B[3] = 8;
+
+    // Обнуляем C
     zero_matrix(C, N);
 
-    // Пока ничего не вызываем — TODO
-    printf("Matrix allocated. N = %d\n", N);
+    // Считаем
+    dgemm_seq(N, N, N, A, B, C);
+
+    // Выводим результат
+    printf("C[0][0] = %f (waiting for 19)\n", C[0 * N + 0]);
+    printf("C[0][1] = %f (waiting for 22)\n", C[1 * N + 0]);
+    printf("C[1][0] = %f (waiting for 43)\n", C[0 * N + 1]);
+    printf("C[1][1] = %f (waiting for 50)\n", C[1 * N + 1]);
 
     free(A);
     free(B);
     free(C);
-
     return 0;
 }
