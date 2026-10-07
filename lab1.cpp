@@ -152,25 +152,37 @@ bool check_correctness(
 //
 // ============================================================
 
-void dgemm_seq(
-    int M,
-    int N,
-    int K,
-    double* A,
-    double* B,
-    double* C)
+void dgemm_seq(int M, int N, int K, double* A, double* B, double* C)
 {
-    // TODO
-    //
-    // ВАЖНО:
-    //   здесь сначала сделать корректную базовую версию.
-    //
-    //   После этого отдельно думать про:
-    //     - порядок циклов;
-    //     - cache locality;
-    //     - address calculation;
-    //     - pointer arithmetic;
-    //     - compiler optimization.
+    for (int j = 0; j < N; j++) {
+
+        // Получаем адрес начала j-го столбца C один раз
+        double* c_col = &C[j * M];
+
+        // Обнуляем весь столбец C[:, j]
+        for (int i = 0; i < M; i++) {
+            c_col[i] = 0.0;
+        }
+
+        // Перебираем столбцы A / строки B
+        for (int k = 0; k < K; k++) {
+
+            // Одно значение B[k][j]
+            double b = B[j * K + k];
+
+            // Получаем адрес начала k-го столбца A один раз
+            double* a_col = &A[k * M];
+
+            // Внутри цикла больше нет:
+            //     j * M + i
+            //     k * M + i
+            //
+            // Просто идём последовательно по памяти.
+            for (int i = 0; i < M; i++) {
+                c_col[i] += a_col[i] * b;
+            }
+        }
+    }
 }
 
 
