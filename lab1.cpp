@@ -22,7 +22,7 @@ double* alloc_matrix(int n)
     double* M = (double*)malloc((size_t)n * n * sizeof(double));
 
     if (M == nullptr) {
-        printf("Ошибка выделения памяти\n");
+        printf("Memory allocation failed\n");
         exit(EXIT_FAILURE);
     }
 
