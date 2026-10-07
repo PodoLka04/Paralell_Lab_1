@@ -114,31 +114,53 @@ void blas_dgemm(
     int K,
     double* A,
     double* B,
-    double* C)
+    double* C,
+    double& elapsed)
 {
-#pragma omp parallel for schedule(static)
-    for (int j = 0; j < N; j++) {
+    double start;
+    double end;
 
-        // Адрес начала j-й колонки C
-        double* c_col = &C[j * M];
-
-        // Обнуляем свою колонку
-        for (int i = 0; i < M; i++) {
-            c_col[i] = 0.0;
+#pragma omp parallel
+    {
+        // Один поток фиксирует начало.
+        // После single есть неявный barrier.    ТУТ МЫ СНАЧАЛ СОЗДАЕМ ПОТОКИ, ПОТОМ ОТСЧЕТ ЗАПУСКАЕМ: Накладные на создание потоков — не часть умножения.
+#pragma omp single
+        {
+            start = omp_get_wtime();
         }
 
-        for (int k = 0; k < K; k++) {
+        // Параллельная работа
+#pragma omp for schedule(static)
+        for (int j = 0; j < N; j++) {
 
-            double b = B[j * K + k];
-
-            // Адрес начала k-й колонки A
-            double* a_col = &A[k * M];
+            double* c_col = &C[j * M];
 
             for (int i = 0; i < M; i++) {
-                c_col[i] += a_col[i] * b;
+                c_col[i] = 0.0;
+            }
+
+            for (int k = 0; k < K; k++) {
+
+                double b = B[j * K + k];
+
+                double* a_col = &A[k * M];
+
+                for (int i = 0; i < M; i++) {
+                    c_col[i] += a_col[i] * b;
+                }
             }
         }
+
+        // У omp for здесь есть неявный barrier.
+        // Поэтому все потоки уже закончили вычисление.
+
+#pragma omp single
+        {
+            end = omp_get_wtime();
+        }
     }
+
+    elapsed = end - start;
 }
 
 
@@ -179,7 +201,7 @@ double compare_matrices(
 // T_par = среднее 10 parallel запусков
 // ============================================================
 
-double measure_parallel(
+double measure_seq(
     int M,
     int N,
     int K,
@@ -193,11 +215,42 @@ double measure_parallel(
 
         double start = omp_get_wtime();
 
-        blas_dgemm(M, N, K, A, B, C);
+        dgemm_seq(M, N, K, A, B, C);
 
         double end = omp_get_wtime();
 
         total_time += end - start;
+    }
+
+    return total_time / NUM_RUNS;
+}
+
+
+double measure_parallel(
+    int M,
+    int N,
+    int K,
+    double* A,
+    double* B,
+    double* C)
+{
+    double total_time = 0.0;
+
+    for (int run = 0; run < NUM_RUNS; run++) {
+
+        double elapsed;
+
+        blas_dgemm(
+            M,
+            N,
+            K,
+            A,
+            B,
+            C,
+            elapsed
+        );
+
+        total_time += elapsed;
     }
 
     return total_time / NUM_RUNS;
