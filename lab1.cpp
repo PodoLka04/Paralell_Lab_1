@@ -22,7 +22,7 @@ double* alloc_matrix(int n)
     double* M = (double*)malloc((size_t)n * n * sizeof(double));
 
     if (M == nullptr) {
-        printf("Memory allocation failed\n");
+        printf("Ошибка выделения памяти\n");
         exit(EXIT_FAILURE);
     }
 
@@ -289,99 +289,24 @@ double calculate_gflops(
 // ============================================================
 // main
 // ============================================================
+
+
+// ============================================================
+// main
+// ============================================================
 int main()
 {
-    int N = 500;
+    // Размеры матриц
+    int matrix_sizes[] = {
+        500, 1000, 1500
+    };
 
-    srand(42);
-    omp_set_dynamic(0);
-
-    printf("OpenMP DGEMM demo\n");
-    printf("Matrix size: %d x %d\n", N, N);
-    printf("Max OpenMP threads: %d\n",
-        omp_get_max_threads());
-
-
-    // ========================================================
-    // Выделение памяти
-    // ========================================================
-
-    double* A = alloc_matrix(N);
-    double* B = alloc_matrix(N);
-
-    double* C_seq = alloc_matrix(N);
-    double* C_par = alloc_matrix(N);
+    int num_sizes =
+        sizeof(matrix_sizes) /
+        sizeof(matrix_sizes[0]);
 
 
-    // ========================================================
-    // Инициализация
-    // ========================================================
-
-    init_matrix(A, N);
-    init_matrix(B, N);
-
-
-    // ========================================================
-    // ПРОВЕРКА ПРАВИЛЬНОСТИ
-    // ========================================================
-
-    dgemm_seq(
-        N, N, N,
-        A, B, C_seq
-    );
-
-    omp_set_num_threads(4);
-
-    double check_time;
-
-    blas_dgemm(
-        N, N, N,
-        A, B, C_par,
-        check_time
-    );
-
-    double max_diff = compare_matrices(
-        C_seq,
-        C_par,
-        N
-    );
-
-    printf("\nCorrectness check\n");
-    printf("-----------------\n");
-    printf("Max difference = %.12e\n", max_diff);
-
-    if (max_diff < EPS) {
-        printf("CHECK: OK\n");
-    }
-    else {
-        printf("CHECK: FAILED\n");
-    }
-
-
-    // ========================================================
-    // SEQUENTIAL — 10 запусков
-    // ========================================================
-
-    double seq_time = measure_seq(
-        N, N, N,
-        A, B, C_seq
-    );
-
-    double seq_gflops = calculate_gflops(
-        N, N, N,
-        seq_time
-    );
-
-    printf("\nSequential\n");
-    printf("-----------------\n");
-    printf("Average time = %.6f sec\n", seq_time);
-    printf("GFLOPS       = %.3f\n", seq_gflops);
-
-
-    // ========================================================
-    // PARALLEL — 10 запусков для каждого P
-    // ========================================================
-
+    // Количество потоков
     int thread_counts[] = {
         1, 2, 4, 8, 16, 24
     };
@@ -390,52 +315,215 @@ int main()
         sizeof(thread_counts) /
         sizeof(thread_counts[0]);
 
-    printf("\nParallel\n");
-    printf("--------------------------------------------------\n");
-    printf("Threads       Time (sec)       GFLOPS       Speedup\n");
-    printf("--------------------------------------------------\n");
 
-    for (int p = 0; p < num_tests; p++) {
+    // ========================================================
+    // Настройка OpenMP
+    // ========================================================
 
-        int threads = thread_counts[p];
+    srand(42);
 
-        if (threads > omp_get_num_procs()) {
-            continue;
+    // Запрещаем OpenMP самостоятельно уменьшать
+    // количество потоков
+    omp_set_dynamic(0);
+
+
+    printf("OpenMP DGEMM benchmark\n");
+    printf("======================\n");
+    printf("Max OpenMP threads: %d\n",
+        omp_get_max_threads());
+
+
+    // ========================================================
+    // Перебираем размеры матриц
+    // ========================================================
+
+    for (int s = 0; s < num_sizes; s++) {
+
+        int N = matrix_sizes[s];
+
+
+        printf("\n========================================\n");
+        printf("Matrix size: %d x %d\n", N, N);
+        printf("========================================\n");
+
+
+        // ====================================================
+        // Выделение памяти
+        //
+        // ВАЖНО:
+        // alloc_matrix(N) сама выделяет N x N
+        // ====================================================
+
+        double* A = alloc_matrix(N);
+        double* B = alloc_matrix(N);
+
+        double* C_seq = alloc_matrix(N);
+        double* C_par = alloc_matrix(N);
+
+
+        // ====================================================
+        // Инициализация
+        // ====================================================
+
+        init_matrix(A, N);
+        init_matrix(B, N);
+
+
+        // ====================================================
+        // ПРОВЕРКА ПРАВИЛЬНОСТИ
+        // ====================================================
+
+        dgemm_seq(
+            N, N, N,
+            A, B, C_seq
+        );
+
+
+        // Для проверки используем максимально доступное
+        // количество потоков, но не больше 24
+        int check_threads =
+            std::min(24, omp_get_max_threads());
+
+        omp_set_num_threads(check_threads);
+
+
+        double check_time;
+
+        blas_dgemm(
+            N, N, N,
+            A, B, C_par,
+            check_time
+        );
+
+
+        double max_diff = compare_matrices(
+            C_seq,
+            C_par,
+            N
+        );
+
+
+        printf("\nCorrectness check\n");
+        printf("-----------------\n");
+        printf("Max difference = %.12e\n", max_diff);
+
+
+        if (max_diff < EPS) {
+            printf("CHECK: OK\n");
+        }
+        else {
+            printf("CHECK: FAILED\n");
         }
 
-        omp_set_num_threads(threads);
 
-        double par_time = measure_parallel(
+        // ====================================================
+        // SEQUENTIAL — 10 запусков
+        // ====================================================
+
+        double seq_time = measure_seq(
             N, N, N,
-            A, B, C_par
+            A, B, C_seq
         );
 
-        double par_gflops = calculate_gflops(
+
+        double seq_gflops = calculate_gflops(
             N, N, N,
-            par_time
+            seq_time
         );
 
-        double speedup =
-            seq_time / par_time;
 
-        printf(
-            "%7d       %.6f        %.3f        %.3f\n",
-            threads,
-            par_time,
-            par_gflops,
-            speedup
-        );
+        printf("\nSequential\n");
+        printf("-----------------\n");
+        printf("Average time = %.6f sec\n", seq_time);
+        printf("GFLOPS       = %.3f\n", seq_gflops);
+
+
+        // ====================================================
+        // PARALLEL — 10 запусков для каждого P
+        // ====================================================
+
+        printf("\nParallel\n");
+
+        printf("--------------------------------------------------\n");
+        printf("Threads       Time (sec)       GFLOPS       Speedup\n");
+        printf("--------------------------------------------------\n");
+
+
+        for (int p = 0; p < num_tests; p++) {
+
+            int threads = thread_counts[p];
+
+
+            // =================================================
+            // Не запускаем больше потоков, чем доступно
+            //
+            // На локальном ПК это, например, даст:
+            // 1, 2, 4
+            //
+            // На кластере с 24 CPU:
+            // 1, 2, 4, 8, 16, 24
+            // =================================================
+
+            if (threads > omp_get_num_procs()) {
+                continue;
+            }
+
+
+            omp_set_num_threads(threads);
+
+
+            // =================================================
+            // Измерение параллельной DGEMM
+            // =================================================
+
+            double par_time = measure_parallel(
+                N, N, N,
+                A, B, C_par
+            );
+
+
+            // =================================================
+            // GFLOPS
+            // =================================================
+
+            double par_gflops = calculate_gflops(
+                N, N, N,
+                par_time
+            );
+
+
+            // =================================================
+            // Ускорение
+            // =================================================
+
+            double speedup =
+                seq_time / par_time;
+
+
+            // =================================================
+            // Вывод
+            // =================================================
+
+            printf(
+                "%7d       %.6f        %.3f        %.3f\n",
+                threads,
+                par_time,
+                par_gflops,
+                speedup
+            );
+        }
+
+
+        // ====================================================
+        // Освобождение памяти
+        // ====================================================
+
+        free(A);
+        free(B);
+        free(C_seq);
+        free(C_par);
     }
 
-
-    // ========================================================
-    // Освобождение памяти
-    // ========================================================
-
-    free(A);
-    free(B);
-    free(C_seq);
-    free(C_par);
 
     return 0;
 }
