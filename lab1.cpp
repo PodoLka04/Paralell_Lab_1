@@ -325,8 +325,28 @@ int main(int argc, char* argv[])
     }
 
 
+    // Конец блока ручного ввода данных
+
     srand(42);
-    omp_set_dynamic(0);
+    omp_set_dynamic(0); // Отключили блокировку потоков при высокой загрузке - дают столько, сколько потребуем сами ядер
+
+
+
+
+    // ========================================================
+// CSV для результатов экспериментов
+// ========================================================
+    FILE* csv = nullptr;
+
+    if (fopen_s(&csv, "gemm_results.csv", "w") != 0 || csv == nullptr) {
+        printf("Ошибка открытия gemm_results.csv\n");
+        return 1;
+    }
+
+    // Заголовки CSV
+    fprintf(csv, "N,threads,time_sec,gflops\n");
+
+
 
 
     printf("OpenMP DGEMM demo\n");
@@ -382,7 +402,7 @@ int main(int argc, char* argv[])
         // ====================================================
 
         int check_threads =
-            std::min(24, omp_get_max_threads());
+            std::min(24, omp_get_max_threads()); // Будем проверять на максимальном количестве потоков правильность вычисления матрицы (На будущее можно проверить крайние случаи, то есть добавить еще для P = 1 для всех N )
 
         omp_set_num_threads(check_threads);
 
@@ -447,14 +467,14 @@ int main(int argc, char* argv[])
 
         int num_tests =
             sizeof(thread_counts) /
-            sizeof(thread_counts[0]);
+            sizeof(thread_counts[0]); // Если бы добавили новое число потоков (32) то не надо было бы массив и *цикл* переписывать.
 
         printf("\nParallel\n");
         printf("--------------------------------------------------\n");
         printf("Threads       Time (sec)       GFLOPS       Speedup\n");
         printf("--------------------------------------------------\n");
 
-        for (int p = 0; p < num_tests; p++) {
+        for (int p = 0; p < num_tests; p++) {  // Я про этот *цикл*
 
             int threads = thread_counts[p];
 
@@ -484,6 +504,18 @@ int main(int argc, char* argv[])
                 par_gflops,
                 speedup
             );
+
+
+
+            // Записываем результат эксперимента в CSV
+            fprintf(
+                csv,
+                "%d,%d,%.9f,%.6f\n",
+                N,
+                threads,
+                par_time,
+                par_gflops
+            );
         }
 
 
@@ -497,6 +529,7 @@ int main(int argc, char* argv[])
         free(C_par);
     }
 
+    fclose(csv);
 
     return 0;
 }
