@@ -451,7 +451,7 @@ int main(int argc, char* argv[])
         printf("Threads       Time (sec)       GFLOPS       Speedup\n");
         printf("--------------------------------------------------\n");
 
-        for (int p = 0; p < num_tests; p++) {  // Я про этот *цикл*
+        for (int p = 0; p < num_tests; p++) {  // я про этот цикл
 
             int threads = thread_counts[p];
 
@@ -459,21 +459,36 @@ int main(int argc, char* argv[])
                 continue;
             }
 
+            // Устанавливаем нужное количество потоков
             omp_set_num_threads(threads);
 
+            // Измеряем параллельное умножение (10 запусков)
+            // После функции в C_par остаётся результат
+            // последнего умножения.
             double par_time = measure_parallel(
                 N, N, N,
                 A, B, C_par
             );
 
+            // Проверяем правильность для текущего P
+            double max_diff = compare_matrices(
+                C_seq,
+                C_par,
+                N
+            );
+
+            bool check_ok = std::isfinite(max_diff) && max_diff < EPS;
+
+            // Рассчитываем производительность
             double par_gflops = calculate_gflops(
                 N, N, N,
                 par_time
             );
 
-            double speedup =
-                seq_time / par_time;
+            // Рассчитываем ускорение
+            double speedup = seq_time / par_time;
 
+            // Вывод результатов производительности
             printf(
                 "%7d       %.6f        %.3f        %.3f\n",
                 threads,
@@ -482,9 +497,14 @@ int main(int argc, char* argv[])
                 speedup
             );
 
+            // Вывод проверки правильности
+            printf(
+                "              CHECK: %s | Max difference = %.12e\n",
+                check_ok ? "OK" : "FAILED",
+                max_diff
+            );
 
-
-            // Записываем результат эксперимента в CSV
+            // Записываем результаты в CSV
             fprintf(
                 csv,
                 "%d,%d,%.9f,%.6f\n",
