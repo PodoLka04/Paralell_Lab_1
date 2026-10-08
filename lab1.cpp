@@ -124,10 +124,13 @@ void blas_dgemm(
     {
         // Один поток фиксирует начало.
         // После single есть неявный barrier.    ТУТ МЫ СНАЧАЛ СОЗДАЕМ ПОТОКИ, ПОТОМ ОТСЧЕТ ЗАПУСКАЕМ: Накладные на создание потоков — не часть умножения.
-#pragma omp single
+#pragma omp master
         {
             start = omp_get_wtime();
         }
+
+        // Ждём, пока master запишет start
+#pragma omp barrier
 
         // Параллельная работа
 #pragma omp for schedule(static)
@@ -154,10 +157,16 @@ void blas_dgemm(
         // У omp for здесь есть неявный barrier.
         // Поэтому все потоки уже закончили вычисление.
 
-#pragma omp single
+         // Все вычисления закончились
+#pragma omp barrier
+
+#pragma omp master
         {
             end = omp_get_wtime();
         }
+
+        // Чтобы все корректно завершили секцию
+#pragma omp barrier
     }
 
     elapsed = end - start;
