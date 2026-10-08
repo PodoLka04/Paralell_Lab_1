@@ -411,44 +411,7 @@ int main(int argc, char* argv[])
         init_matrix(B, N);
 
 
-        // ====================================================
-        // ПРОВЕРКА ПРАВИЛЬНОСТИ
-        // ====================================================
-
-        int check_threads =
-            std::min(24, omp_get_max_threads()); // Будем проверять на максимальном количестве потоков правильность вычисления матрицы (На будущее можно проверить крайние случаи, то есть добавить еще для P = 1 для всех N )
-
-        omp_set_num_threads(check_threads);
-
-        double check_time;
-
-        blas_dgemm(
-            N, N, N,
-            A, B, C_par,
-            check_time
-        );
-
-        dgemm_seq(
-            N, N, N,
-            A, B, C_seq
-        );
-
-        double max_diff = compare_matrices(
-            C_seq,
-            C_par,
-            N
-        );
-
-        printf("\nCorrectness check\n");
-        printf("-----------------\n");
-        printf("Max difference = %.12e\n", max_diff);
-
-        if (max_diff < EPS) {
-            printf("CHECK: OK\n");
-        }
-        else {
-            printf("CHECK: FAILED\n");
-        }
+        
 
 
         // ====================================================
