@@ -336,14 +336,22 @@ int main(int argc, char* argv[])
     // ========================================================
 // CSV для результатов экспериментов
 // ========================================================
+#ifdef _WIN32
     FILE* csv = nullptr;
 
     if (fopen_s(&csv, "gemm_results.csv", "w") != 0 || csv == nullptr) {
         printf("Ошибка открытия gemm_results.csv\n");
         return 1;
     }
+#else
+    FILE* csv = fopen("gemm_results.csv", "w");
 
-    // Заголовки CSV
+    if (csv == nullptr) {
+        printf("Ошибка открытия gemm_results.csv\n");
+        return 1;
+    }
+#endif
+
     fprintf(csv, "N,threads,time_sec,gflops\n");
 
 
