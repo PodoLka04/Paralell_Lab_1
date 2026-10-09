@@ -1,0 +1,102 @@
+========================================
+SLURM JOB INFORMATION
+========================================
+Job ID:       4388640
+Node:         cn-035
+CPUs:         24
+Working dir:  /home/dpodolin
+
+Files in current dir:
+ls: cannot access 'gemm4': No such file or directory
+
+CPU information:
+Model name:                              Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz
+Thread(s) per core:                      1
+Core(s) per socket:                      24
+Socket(s):                               2
+
+========================================
+PROGRAM
+========================================
+OpenMP DGEMM demo
+Matrix sizes: 500, 1000, 1500
+Max OpenMP threads: 24
+
+==================================================
+N = 500
+==================================================
+
+Sequential
+-----------------
+Average time = 0.042379 sec
+GFLOPS       = 5.899
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       0.047496        5.264        0.892
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.024161        10.347        1.754
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.012253        20.403        3.459
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.006343        39.413        6.681
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.003284        76.129        12.905
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.003043        82.157        13.927
+              CHECK: OK | Max difference = 0.000000000000e+00
+
+==================================================
+N = 1000
+==================================================
+
+Sequential
+-----------------
+Average time = 0.324876 sec
+GFLOPS       = 6.156
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       0.376413        5.313        0.863
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.192822        10.372        1.685
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.095867        20.862        3.389
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.048556        41.190        6.691
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.026214        76.295        12.393
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.024667        81.079        13.170
+              CHECK: OK | Max difference = 0.000000000000e+00
+
+==================================================
+N = 1500
+==================================================
+
+Sequential
+-----------------
+Average time = 1.401616 sec
+GFLOPS       = 4.816
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       1.733377        3.894        0.809
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.900185        7.498        1.557
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.464360        14.536        3.018
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.243480        27.723        5.757
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.124094        54.394        11.295
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.095452        70.716        14.684
+              CHECK: OK | Max difference = 0.000000000000e+00
+Exit code: 0

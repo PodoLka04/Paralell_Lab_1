@@ -1,0 +1,102 @@
+========================================
+SLURM JOB INFORMATION
+========================================
+Job ID:       4388727
+Node:         cn-045
+CPUs:         24
+Working dir:  /home/dpodolin
+
+Files in current dir:
+ls: cannot access 'gemm4': No such file or directory
+
+CPU information:
+Model name:                              AMD EPYC 7702 64-Core Processor
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+
+========================================
+PROGRAM
+========================================
+OpenMP DGEMM demo
+Matrix sizes: 500, 1000, 1500
+Max OpenMP threads: 24
+
+==================================================
+N = 500
+==================================================
+
+Sequential
+-----------------
+Average time = 0.023278 sec
+GFLOPS       = 10.740
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       0.044970        5.559        0.518
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.022381        11.170        1.040
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.011200        22.321        2.078
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.005788        43.196        4.022
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.003418        73.149        6.811
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.002388        104.708        9.750
+              CHECK: OK | Max difference = 0.000000000000e+00
+
+==================================================
+N = 1000
+==================================================
+
+Sequential
+-----------------
+Average time = 0.170962 sec
+GFLOPS       = 11.698
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       0.332279        6.019        0.515
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.165972        12.050        1.030
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.082861        24.137        2.063
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.042545        47.010        4.018
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.023433        85.350        7.296
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.016955        117.961        10.083
+              CHECK: OK | Max difference = 0.000000000000e+00
+
+==================================================
+N = 1500
+==================================================
+
+Sequential
+-----------------
+Average time = 1.218077 sec
+GFLOPS       = 5.542
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       1.673123        4.034        0.728
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.875213        7.712        1.392
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.464870        14.520        2.620
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.314169        21.485        3.877
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.158465        42.596        7.687
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.106778        63.215        11.408
+              CHECK: OK | Max difference = 0.000000000000e+00
+Exit code: 0
