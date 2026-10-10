@@ -5,7 +5,14 @@
 #include <omp.h>
 
 
-#ifdef USE_OPENBLAS // Для 3 задания
+ // Для 3 задания. В зависимости от компиляции подключится нужная библиотека
+#if defined(USE_OPENBLAS) && defined(USE_MKL)
+#error "Choose only one BLAS library"
+#endif
+
+#ifdef USE_MKL
+#include <mkl.h>
+#elif defined(USE_OPENBLAS)
 #include <cblas.h>
 #include <openblas_config.h>
 #endif
@@ -176,6 +183,22 @@ void blas_dgemm(
 }
 
 
+
+// Функция с интерфейсом из задания :)
+void blas_dgemm(
+    int M,
+    int N,
+    int K,
+    double* A,
+    double* B,
+    double* C)
+{
+    double elapsed;
+
+    blas_dgemm(M, N, K, A, B, C, elapsed);
+}
+
+
 // ============================================================
 // Проверка двух матриц
 //
@@ -193,6 +216,10 @@ double compare_matrices(
     for (int i = 0; i < n * n; i++) {
 
         double diff = fabs(A[i] - B[i]);
+
+        if (!std::isfinite(diff)) {
+            return INFINITY;
+        }
 
         if (diff > max_diff) {
             max_diff = diff;
@@ -267,26 +294,29 @@ double measure_parallel(
 
     return total_time / NUM_RUNS;
 
+}
 
 
 
-
-#ifdef USE_OPENBLAS
+#if defined(USE_OPENBLAS) || defined(USE_MKL)
 
     // ============================================================
-    // Измерение времени OpenBLAS
+    // Измерение времени библиотечного DGEMM
     //
-    // NUM_RUNS раз запускаем библиотечное умножение
+    // Используем либо OpenBLAS, либо Intel MKL.
+    //
+    // Обе библиотеки предоставляют функцию cblas_dgemm(). Поэтому пишем только её.
+    //
+    // NUM_RUNS раз запускаем умножение
     // и считаем среднее время.
     //
-    // CblasColMajor - матрицы хранятся по столбцам,
-    // как и в нашей реализации.
+    // CblasColMajor - хранение матриц по столбцам.
     //
     // C = alpha * A * B + beta * C
-    // alpha = 1, beta = 0 => C = A * B
+    // alpha = 1, beta = 0  =>  C = A * B
     // ============================================================
 
-    double measure_openblas(
+    double measure_library(
         int N,
         double* A,
         double* B,
@@ -316,11 +346,12 @@ double measure_parallel(
         }
 
         return total_time / NUM_RUNS;
-    }
+}
 
 #endif
 
-}
+
+
 
 
 // ============================================================
@@ -389,13 +420,15 @@ int main(int argc, char* argv[])
         matrix_sizes[0] = custom_N;
         num_sizes = 1;
     }
-
-
-    // Конец блока ручного ввода данных
+        // Конец блока ручного ввода данных
 
     srand(42);
-    omp_set_dynamic(0); // Отключили блокировку потоков при высокой загрузке - дают столько, сколько потребуем сами ядер
+    omp_set_dynamic(0); // Отключили блокировку потоков при высокой загрузке - дают столько, сколько потребуем сами ядер (также излишне прописали это в run.sh)
 
+
+
+
+#if !defined(USE_OPENBLAS) && !defined(USE_MKL)
 
 
 
@@ -784,37 +817,62 @@ int main(int argc, char* argv[])
 
     fclose(weak_csv); // Закрыли слабую масштабируемость
 
+    fclose(csv); // Закрыли сильную масштабируемость
+
+#endif // Конец заданий 1 и 2
 
 
 
-#ifdef USE_OPENBLAS
+
+
+
+#if defined(USE_OPENBLAS) || defined(USE_MKL)
 
     // ========================================================
-    // ЗАДАНИЕ 3. СРАВНЕНИЕ С OPENBLAS
+    // ЗАДАНИЕ 3. СРАВНЕНИЕ С BLAS-БИБЛИОТЕКАМИ
     //
-    // Сравниваем:
-    // 1) Наш параллельный DGEMM
-    // 2) Библиотечный OpenBLAS DGEMM
+    // Сравниваем нашу параллельную реализацию DGEMM
+    // с OpenBLAS или Intel MKL.
     //
-    // Для одинаковых N и P измеряем время и GFLOPS.
+    // N = 500, 1000, 1500
+    // P = 1, 2, 4, 8, 16, 24
+    //
+    // Для каждой реализации - 10 измерений.
+    //
     // Результаты записываем в отдельный CSV.
     // ========================================================
 
 
     // ========================================================
-    // CSV для сравнения с OpenBLAS
+    // Выбор библиотеки и имени CSV
     // ========================================================
 
-    FILE* blas_csv = fopen("gemm_blas_results.csv", "w");
+#ifdef USE_MKL
 
-    if (blas_csv == nullptr) {
-        printf("Ошибка открытия gemm_blas_results.csv\n");
-        fclose(csv);
+    const char* library_name = "MKL";
+    const char* filename = "gemm_mkl_results.csv";
+
+#else
+
+    const char* library_name = "OpenBLAS";
+    const char* filename = "gemm_openblas_results.csv";
+
+#endif
+
+
+    // ========================================================
+    // CSV для третьего задания
+    // ========================================================
+
+    FILE* library_csv = fopen(filename, "w");
+
+    if (library_csv == nullptr) {
+        printf("Ошибка открытия CSV для задания 3\n");
         return 1;
     }
 
     fprintf(
-        blas_csv,
+        library_csv,
         "N,threads,implementation,time_sec,gflops\n"
     );
 
@@ -823,20 +881,20 @@ int main(int argc, char* argv[])
     // Количество потоков
     // ========================================================
 
-    int blas_thread_counts[] = {
+    int library_threads[] = {
         1, 2, 4, 8, 16, 24
     };
 
-    int blas_num_tests =
-        sizeof(blas_thread_counts) /
-        sizeof(blas_thread_counts[0]);
+    int library_num_tests =
+        sizeof(library_threads) /
+        sizeof(library_threads[0]);
 
 
     // ========================================================
-    // Для каждого размера матрицы
+    // Перебираем размеры матриц
     //
-    // Используем matrix_sizes[] из начала main().
-    // Это те же N = 500, 1000, 1500.
+    // matrix_sizes[] и num_sizes уже определены
+    // в начале main().
     // ========================================================
 
     for (int size_id = 0; size_id < num_sizes; size_id++) {
@@ -852,11 +910,11 @@ int main(int argc, char* argv[])
         double* B = alloc_matrix(N);
 
         double* C_our = alloc_matrix(N);
-        double* C_blas = alloc_matrix(N);
+        double* C_library = alloc_matrix(N);
 
 
         // ====================================================
-        // Инициализация матриц
+        // Инициализация исходных матриц
         // ====================================================
 
         init_matrix(A, N);
@@ -864,12 +922,12 @@ int main(int argc, char* argv[])
 
 
         // ====================================================
-        // Эксперимент для каждого количества потоков P
+        // Перебираем количество потоков
         // ====================================================
 
-        for (int p = 0; p < blas_num_tests; p++) {
+        for (int p = 0; p < library_num_tests; p++) {
 
-            int threads = blas_thread_counts[p];
+            int threads = library_threads[p];
 
             if (threads > omp_get_num_procs()) {
                 continue;
@@ -877,14 +935,55 @@ int main(int argc, char* argv[])
 
 
             // =================================================
-            // Устанавливаем одинаковое количество потоков
+            // Установка числа потоков
             //
-            // omp_set_num_threads - для нашей реализации.
-            // openblas_set_num_threads - для библиотеки.
+            // Наша реализация использует OpenMP.
+            // Библиотека управляет своими потоками отдельно.
             // =================================================
 
             omp_set_num_threads(threads);
+
+#ifdef USE_MKL
+
+            mkl_set_dynamic(0);
+            mkl_set_num_threads(threads);
+
+#else
+
             openblas_set_num_threads(threads);
+
+#endif
+
+
+            // =================================================
+            // Прогрев перед измерениями
+            //
+            // По одному запуску каждой реализации
+            // без включения результата в среднее время.
+            //
+            // Это уменьшает влияние первого вызова
+            // и первоначальной подготовки потоков.
+            // =================================================
+
+            double warmup_elapsed;
+
+            blas_dgemm(
+                N, N, N,
+                A, B, C_our,
+                warmup_elapsed
+            );
+
+            cblas_dgemm(
+                CblasColMajor,
+                CblasNoTrans,
+                CblasNoTrans,
+                N, N, N,
+                1.0,
+                A, N,
+                B, N,
+                0.0,
+                C_library, N
+            );
 
 
             // =================================================
@@ -898,41 +997,51 @@ int main(int argc, char* argv[])
 
 
             // =================================================
-            // Измерение OpenBLAS - 10 запусков
+            // Измерение библиотеки - 10 запусков
             // =================================================
 
-            double blas_time = measure_openblas(
+            double library_time = measure_library(
                 N,
-                A, B, C_blas
+                A, B, C_library
             );
 
 
             // =================================================
-            // Проверка правильности OpenBLAS
+            // Проверка правильности
             //
             // Сравниваем результаты двух реализаций.
-            // Проверка не входит в измеряемое время.
+            // Время проверки не входит в измерения.
             // =================================================
 
             double max_diff = compare_matrices(
                 C_our,
-                C_blas,
+                C_library,
                 N
             );
 
             if (!std::isfinite(max_diff) || max_diff >= EPS) {
 
                 printf(
-                    "OpenBLAS CHECK FAILED: N=%d P=%d, diff=%.12e\n",
+                    "CHECK FAILED: %s, N=%d, P=%d, diff=%.12e\n",
+                    library_name,
                     N,
                     threads,
                     max_diff
                 );
+
+                free(A);
+                free(B);
+                free(C_our);
+                free(C_library);
+
+                fclose(library_csv);
+
+                return 1;
             }
 
 
             // =================================================
-            // Расчёт GFLOPS
+            // GFLOPS нашей реализации
             // =================================================
 
             double our_gflops = calculate_gflops(
@@ -940,21 +1049,28 @@ int main(int argc, char* argv[])
                 our_time
             );
 
-            double blas_gflops = calculate_gflops(
+
+            // =================================================
+            // GFLOPS библиотеки
+            // =================================================
+
+            double library_gflops = calculate_gflops(
                 N, N, N,
-                blas_time
+                library_time
             );
 
 
             // =================================================
             // Запись результатов в CSV
             //
-            // Две строки:
-            // одна - наш DGEMM, вторая - OpenBLAS.
+            // Для каждого P записываем две строки:
+            //
+            // 1) Наш OpenMP DGEMM
+            // 2) OpenBLAS или Intel MKL
             // =================================================
 
             fprintf(
-                blas_csv,
+                library_csv,
                 "%d,%d,OurOpenMP,%.9f,%.6f\n",
                 N,
                 threads,
@@ -963,12 +1079,13 @@ int main(int argc, char* argv[])
             );
 
             fprintf(
-                blas_csv,
-                "%d,%d,OpenBLAS,%.9f,%.6f\n",
+                library_csv,
+                "%d,%d,%s,%.9f,%.6f\n",
                 N,
                 threads,
-                blas_time,
-                blas_gflops
+                library_name,
+                library_time,
+                library_gflops
             );
         }
 
@@ -980,19 +1097,23 @@ int main(int argc, char* argv[])
         free(A);
         free(B);
         free(C_our);
-        free(C_blas);
+        free(C_library);
     }
 
-    fclose(blas_csv);
 
-    printf("\nTask 3 complete: gemm_blas_results.csv\n");
+    // ========================================================
+    // Закрытие CSV
+    // ========================================================
+
+    fclose(library_csv);
+
+    printf(
+        "Task 3 complete: %s\n",
+        filename
+    );
 
 #endif
 
-
-
-
-    fclose(csv); // Закрыли сильную масштабируемость
 
     return 0;
 }

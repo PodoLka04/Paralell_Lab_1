@@ -1,0 +1,17 @@
+========================================
+JOB ID: 4390397
+NODE: cn-039
+========================================
+Model name:                              Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz
+Thread(s) per core:                      1
+Core(s) per socket:                      24
+Socket(s):                               2
+
+========== OPENBLAS ==========
+Task 3 complete: gemm_openblas_results.csv
+
+========== MKL ==========
+Task 3 complete: gemm_mkl_results.csv
+
+========== DONE ==========
+/var/spool/slurm/d/job4390397/slurm_script: line 45: unexpected EOF while looking for matching ``'

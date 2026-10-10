@@ -1,0 +1,1103 @@
+﻿#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+#include <algorithm>
+#include <omp.h>
+
+
+ // Для 3 задания. В зависимости от компиляции подключится нужная библиотека
+#if defined(USE_OPENBLAS) && defined(USE_MKL)
+#error "Choose only one BLAS library"
+#endif
+
+#ifdef USE_MKL
+#include <mkl.h>
+#elif defined(USE_OPENBLAS)
+#include <cblas.h>
+#include <openblas_config.h>
+#endif
+
+// ============================================================
+// Параметры эксперимента
+// ============================================================
+
+const int NUM_RUNS = 10;
+const double EPS = 1e-9;
+
+
+// ============================================================
+// Работа с матрицами
+// ============================================================ 
+
+// Выделение матрицы N x N
+double* alloc_matrix(int n)
+{
+    double* M = (double*)malloc((size_t)n * n * sizeof(double));
+
+    if (M == nullptr) {
+        printf("Ошибка выделения памяти\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return M;
+}
+
+
+// Заполнение матрицы случайными числами
+void init_matrix(double* M, int n)
+{
+    for (int i = 0; i < n * n; i++) {
+        M[i] = (double)rand() / RAND_MAX;
+    }
+}
+
+
+// Обнуление матрицы
+void zero_matrix(double* M, int n)
+{
+    for (int i = 0; i < n * n; i++) {
+        M[i] = 0.0;
+    }
+}
+
+
+// ============================================================
+// Последовательное умножение
+// C = A * B
+//
+// Матрицы хранятся в column-major:
+//
+// A(i,k) = A[k * M + i]
+// B(k,j) = B[j * K + k]
+// C(i,j) = C[j * M + i]
+//
+// Порядок циклов: j -> k -> i
+// ============================================================
+
+void dgemm_seq(
+    int M,
+    int N,
+    int K,
+    double* A,
+    double* B,
+    double* C)
+{
+    for (int j = 0; j < N; j++) {
+
+        // Адрес начала j-й колонки C
+        double* c_col = &C[j * M];
+
+        // C[:,j] = 0
+        for (int i = 0; i < M; i++) {
+            c_col[i] = 0.0;
+        }
+
+        for (int k = 0; k < K; k++) {
+
+            // B(k,j)
+            double b = B[j * K + k];
+
+            // Адрес начала k-й колонки A
+            double* a_col = &A[k * M];
+
+            for (int i = 0; i < M; i++) {
+
+                // C(i,j) += A(i,k) * B(k,j)
+                c_col[i] += a_col[i] * b;
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// Параллельное DGEMM
+//
+// Параллелим внешний цикл по j.
+//
+// Каждый поток получает свои колонки C.
+// Поэтому два потока не записывают один и тот же C.
+//
+// schedule(static) подходит для регулярного DGEMM.
+// ============================================================
+
+void blas_dgemm(
+    int M,
+    int N,
+    int K,
+    double* A,
+    double* B,
+    double* C,
+    double& elapsed)
+{
+    double start;
+    double end;
+
+#pragma omp parallel
+    {
+        // Один поток фиксирует начало.
+        // После single есть неявный barrier.    ТУТ МЫ СНАЧАЛ СОЗДАЕМ ПОТОКИ, ПОТОМ ОТСЧЕТ ЗАПУСКАЕМ: Накладные на создание потоков — не часть умножения.
+#pragma omp master
+        {
+            start = omp_get_wtime();
+        }
+
+        // Ждём, пока master запишет start
+#pragma omp barrier
+
+        // Параллельная работа
+#pragma omp for schedule(static)
+        for (int j = 0; j < N; j++) {
+
+            double* c_col = &C[j * M];
+
+            for (int i = 0; i < M; i++) {
+                c_col[i] = 0.0;
+            }
+
+            for (int k = 0; k < K; k++) {
+
+                double b = B[j * K + k];
+
+                double* a_col = &A[k * M];
+
+                for (int i = 0; i < M; i++) {
+                    c_col[i] += a_col[i] * b;
+                }
+            }
+        }
+
+        // У omp for здесь есть неявный barrier.
+        // Поэтому все потоки уже закончили вычисление.
+
+
+#pragma omp master
+        {
+            end = omp_get_wtime();
+        }
+
+
+    }
+
+    elapsed = end - start;
+}
+
+
+// ============================================================
+// Проверка двух матриц
+//
+// Сравниваем последовательный и параллельный результаты.
+// Возвращаем максимальную абсолютную ошибку.
+// ============================================================
+
+double compare_matrices(
+    double* A,
+    double* B,
+    int n)
+{
+    double max_diff = 0.0;
+
+    for (int i = 0; i < n * n; i++) {
+
+        double diff = fabs(A[i] - B[i]);
+
+        if (!std::isfinite(diff)) {
+            return INFINITY;
+        }
+
+        if (diff > max_diff) {
+            max_diff = diff;
+        }
+    }
+
+    return max_diff;
+}
+
+
+// ============================================================
+// Измерение времени  полседовательного и параллельного DGEMM
+//
+// NUM_RUNS раз запускаем умножение
+// и считаем среднее время.
+// 
+// T_seq  = среднее 10 sequential запусков
+// T_par = среднее 10 parallel запусков
+// ============================================================
+
+double measure_seq(
+    int M,
+    int N,
+    int K,
+    double* A,
+    double* B,
+    double* C)
+{
+    double total_time = 0.0;
+
+    for (int run = 0; run < NUM_RUNS; run++) {
+
+        double start = omp_get_wtime();
+
+        dgemm_seq(M, N, K, A, B, C);
+
+        double end = omp_get_wtime();
+
+        total_time += end - start;
+    }
+
+    return total_time / NUM_RUNS;
+}
+
+
+double measure_parallel(
+    int M,
+    int N,
+    int K,
+    double* A,
+    double* B,
+    double* C)
+{
+    double total_time = 0.0;
+
+    for (int run = 0; run < NUM_RUNS; run++) {
+
+        double elapsed;
+
+        blas_dgemm(
+            M,
+            N,
+            K,
+            A,
+            B,
+            C,
+            elapsed
+        );
+
+        total_time += elapsed;
+    }
+
+    return total_time / NUM_RUNS;
+
+}
+
+
+
+#if defined(USE_OPENBLAS) || defined(USE_MKL)
+
+    // ============================================================
+    // Измерение времени библиотечного DGEMM
+    //
+    // Используем либо OpenBLAS, либо Intel MKL.
+    //
+    // Обе библиотеки предоставляют функцию cblas_dgemm(). Поэтому пишем только её.
+    //
+    // NUM_RUNS раз запускаем умножение
+    // и считаем среднее время.
+    //
+    // CblasColMajor - хранение матриц по столбцам.
+    //
+    // C = alpha * A * B + beta * C
+    // alpha = 1, beta = 0  =>  C = A * B
+    // ============================================================
+
+    double measure_library(
+        int N,
+        double* A,
+        double* B,
+        double* C)
+    {
+        double total_time = 0.0;
+
+        for (int run = 0; run < NUM_RUNS; run++) {
+
+            double start = omp_get_wtime();
+
+            cblas_dgemm(
+                CblasColMajor,
+                CblasNoTrans,
+                CblasNoTrans,
+                N, N, N,
+                1.0,
+                A, N,
+                B, N,
+                0.0,
+                C, N
+            );
+
+            double end = omp_get_wtime();
+
+            total_time += end - start;
+        }
+
+        return total_time / NUM_RUNS;
+}
+
+#endif
+
+
+
+
+
+// ============================================================
+// GFLOPS
+//
+// Для матричного умножения:
+//
+// FLOPs = 2 * M * N * K
+//
+// GFLOPS = FLOPs / time / 1e9
+// ============================================================
+
+double calculate_gflops(
+    int M,
+    int N,
+    int K,
+    double time)
+{
+    double flops = 2.0 * M * N * K;
+
+    return flops / time / 1e9;
+}
+
+
+
+
+
+
+
+// ============================================================
+// main
+// ============================================================
+
+int main(int argc, char* argv[])
+{
+    // ========================================================
+    // Размеры матриц
+    //
+    // Без аргумента:
+    //     ./gemm   
+    //     -> 500, 1000, 1500
+    //
+    // С аргументом:
+    //     ./gemm 200
+    //     -> только N = 200
+    // ========================================================s
+
+    int matrix_sizes[] = {
+        500, 1000, 1500
+    };
+
+    int num_sizes = 3;
+
+    // Если передали N через командную строку,
+    // запускаем только этот размер.
+    if (argc > 1) {
+
+        int custom_N = atoi(argv[1]);
+
+        if (custom_N <= 0) {
+            printf("Ошибка: N должно быть положительным числом.\n");
+            printf("Пример: %s 200\n", argv[0]);
+            return 1;
+        }
+
+        matrix_sizes[0] = custom_N;
+        num_sizes = 1;
+    }
+        // Конец блока ручного ввода данных
+
+    srand(42);
+    omp_set_dynamic(0); // Отключили блокировку потоков при высокой загрузке - дают столько, сколько потребуем сами ядер (также излишне прописали это в run.sh)
+
+
+
+
+#if !defined(USE_OPENBLAS) && !defined(USE_MKL)
+
+
+
+    // ========================================================
+// CSV для результатов экспериментов
+// ========================================================
+#ifdef _WIN32
+    FILE* csv = nullptr;
+
+    if (fopen_s(&csv, "gemm_results.csv", "w") != 0 || csv == nullptr) {
+        printf("Ошибка открытия gemm_results.csv\n");
+        return 1;
+    }
+#else
+    FILE* csv = fopen("gemm_results.csv", "w");
+
+    if (csv == nullptr) {
+        printf("Ошибка открытия gemm_results.csv\n");
+        return 1;
+    }
+#endif
+
+    fprintf(csv, "N,threads,time_sec,gflops\n");
+
+
+
+
+    printf("OpenMP DGEMM demo\n");
+
+    if (num_sizes == 1) {
+        printf("Matrix size: %d x %d\n",
+            matrix_sizes[0],
+            matrix_sizes[0]);
+    }
+    else {
+        printf("Matrix sizes: 500, 1000, 1500\n");
+    }
+
+    printf("Max OpenMP threads: %d\n",
+        omp_get_max_threads());
+
+
+    // ========================================================
+    // Запуск экспериментов для каждого N
+    // ========================================================
+
+    for (int size_id = 0; size_id < num_sizes; size_id++) {
+
+        int N = matrix_sizes[size_id];
+
+        printf("\n");
+        printf("==================================================\n");
+        printf("N = %d\n", N);
+        printf("==================================================\n");
+
+
+        // ====================================================
+        // Выделение памяти
+        // ====================================================
+
+        double* A = alloc_matrix(N);
+        double* B = alloc_matrix(N);
+
+        double* C_seq = alloc_matrix(N);
+        double* C_par = alloc_matrix(N);
+
+
+        // ====================================================
+        // Инициализация
+        // ====================================================
+
+        init_matrix(A, N);
+        init_matrix(B, N);
+
+
+        
+
+
+        // ====================================================
+        // SEQUENTIAL — 10 запусков
+        // ====================================================
+
+        double seq_time = measure_seq(
+            N, N, N,
+            A, B, C_seq
+        );
+
+        double seq_gflops = calculate_gflops(
+            N, N, N,
+            seq_time
+        );
+
+        printf("\nSequential\n");
+        printf("-----------------\n");
+        printf("Average time = %.6f sec\n", seq_time);
+        printf("GFLOPS       = %.3f\n", seq_gflops);
+
+
+        // ====================================================
+        // PARALLEL — 10 запусков для каждого P
+        // ====================================================
+
+        int thread_counts[] = {
+            1, 2, 4, 8, 16, 24
+        };
+
+        int num_tests =
+            sizeof(thread_counts) /
+            sizeof(thread_counts[0]); // Если бы добавили новое число потоков (32) то не надо было бы массив и *цикл* переписывать.
+
+        printf("\nParallel\n");
+        printf("--------------------------------------------------\n");
+        printf("Threads       Time (sec)       GFLOPS       Speedup\n");
+        printf("--------------------------------------------------\n");
+
+        for (int p = 0; p < num_tests; p++) {
+
+            int threads = thread_counts[p];
+
+            if (threads > omp_get_num_procs()) {
+                continue;
+            }
+
+            // Устанавливаем нужное количество потоков
+            omp_set_num_threads(threads);
+
+            // Измеряем параллельное умножение (10 запусков)
+            // После функции в C_par остаётся результат
+            // последнего умножения.
+            double par_time = measure_parallel(
+                N, N, N,
+                A, B, C_par
+            );
+
+            // Проверяем правильность для текущего P
+            double max_diff = compare_matrices(
+                C_seq,
+                C_par,
+                N
+            );
+
+            bool check_ok = std::isfinite(max_diff) && max_diff < EPS;
+
+            // Рассчитываем производительность
+            double par_gflops = calculate_gflops(
+                N, N, N,
+                par_time
+            );
+
+            // Рассчитываем ускорение
+            double speedup = seq_time / par_time;
+
+            // Вывод результатов производительности
+            printf(
+                "%7d       %.6f        %.3f        %.3f\n",
+                threads,
+                par_time,
+                par_gflops,
+                speedup
+            );
+
+            // Вывод проверки правильности
+            printf(
+                "              CHECK: %s | Max difference = %.12e\n",
+                check_ok ? "OK" : "FAILED",
+                max_diff
+            );
+
+            // Записываем результаты в CSV
+            fprintf(
+                csv,
+                "%d,%d,%.9f,%.6f\n",
+                N,
+                threads,
+                par_time,
+                par_gflops
+            );
+        }
+
+
+        // ====================================================
+        // Освобождение памяти
+        // ====================================================
+
+        free(A);
+        free(B);
+        free(C_seq);
+        free(C_par);
+    }
+
+
+
+    // ========================================================
+    // СЛАБАЯ МАСШТАБИРУЕМОСТЬ (WEAK SCALING)
+    //
+    // При увеличении количества потоков P
+    // увеличиваем размер матрицы N.
+    //
+    // При этом количество вычислений на один поток
+    // должно оставаться примерно постоянным.
+    //
+    // FLOPs = 2 * N^3
+    // N(P) = N0 * cbrt(P)
+    // 
+    // То есть мы увеличиваем И ТО, И ДРУГОЕ. НО матрицы увеличиваем по определенной формуле слабой масштабируемости.
+    // 
+    // Поэтому тут мы большие матрицы нашими методами создаем. Но без верификации. Иначе загрузка большая + мы достаточно уже проверили.
+    //
+    // Результаты записываем только в CSV.
+    // 
+    // Важно!!!
+    // Тут нет реализации подсчета для произвольного аргумента.
+    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Мне лень.!!!!!!!!!!!!!!!
+    // ========================================================  
+
+
+    // ========================================================
+    // CSV для слабой масштабируемости
+    // ========================================================
+
+#ifdef _WIN32
+    FILE* weak_csv = nullptr;
+
+    if (fopen_s(&weak_csv, "gemm_weak_results.csv", "w") != 0 ||
+        weak_csv == nullptr) {
+
+        fclose(csv);
+        return 1;
+    }
+#else
+    FILE* weak_csv = fopen("gemm_weak_results.csv", "w");
+
+    if (weak_csv == nullptr) {
+
+        fclose(csv);
+        return 1;
+    }
+#endif
+
+    fprintf(
+        weak_csv,
+        "base_N,threads,N,time_sec,gflops,weak_efficiency\n"
+    );
+
+
+    // ========================================================
+    // Начальные размеры матриц и количество потоков
+    // ========================================================
+
+    int weak_base_sizes[] = {
+        500, 1000, 1500
+    };
+
+    int weak_thread_counts[] = {
+        1, 2, 4, 8, 16, 24
+    };
+
+    int weak_num_sizes =
+        sizeof(weak_base_sizes) /
+        sizeof(weak_base_sizes[0]);
+
+    int weak_num_tests =
+        sizeof(weak_thread_counts) /
+        sizeof(weak_thread_counts[0]);
+
+
+    // ========================================================
+    // Для каждого начального размера N0
+    // ========================================================
+
+    for (int size_id = 0; size_id < weak_num_sizes; size_id++) {
+
+        int N0 = weak_base_sizes[size_id];
+
+        // Время при P = 1.
+        // Используем как базу для слабой эффективности.
+        double base_time = 0.0;
+
+
+        // ====================================================
+        // Измерения для P = 1, 2, 4, 8, 16, 24
+        // ====================================================
+
+        for (int p = 0; p < weak_num_tests; p++) {
+
+            int threads = weak_thread_counts[p];
+
+            if (threads > omp_get_num_procs()) {
+                continue;
+            }
+
+
+            // =================================================
+            // Новый размер матрицы
+            //
+            // При P = 1: N = N0
+            // При P = 8: N = 2 * N0
+            //
+            // Объём вычислений на поток примерно постоянен.
+            // =================================================
+
+            int N = (int)std::round(
+                N0 * std::cbrt((double)threads)
+            );
+
+
+            // =================================================
+            // Выделение памяти
+            // =================================================
+
+            double* A = alloc_matrix(N);
+            double* B = alloc_matrix(N);
+            double* C_par = alloc_matrix(N);
+
+
+            // =================================================
+            // Инициализация матриц
+            // =================================================
+
+            init_matrix(A, N);
+            init_matrix(B, N);
+
+
+            // =================================================
+            // Параллельное умножение — 10 запусков
+            // =================================================
+
+            omp_set_num_threads(threads);
+
+            double par_time = measure_parallel(
+                N, N, N,
+                A, B, C_par
+            );
+
+
+            // =================================================
+            // GFLOPS
+            // =================================================
+
+            double par_gflops = calculate_gflops(
+                N, N, N,
+                par_time
+            );
+
+
+            // =================================================
+            // Эффективность слабой масштабируемости
+            //
+            // Efficiency = T(1, N0) / T(P, N(P))
+            //
+            // В идеальном случае эффективность равна 1.
+            // =================================================
+
+            if (threads == 1) {
+                base_time = par_time;
+            }
+
+            double weak_efficiency = base_time / par_time;
+
+
+            // =================================================
+            // Запись результатов в CSV
+            // =================================================
+
+            fprintf(
+                weak_csv,
+                "%d,%d,%d,%.9f,%.6f,%.6f\n",
+                N0,
+                threads,
+                N,
+                par_time,
+                par_gflops,
+                weak_efficiency
+            );
+
+
+            // =================================================
+            // Освобождение памяти
+            // =================================================
+
+            free(A);
+            free(B);
+            free(C_par);
+        }
+    }
+
+    fclose(weak_csv); // Закрыли слабую масштабируемость
+
+    fclose(csv); // Закрыли сильную масштабируемость
+
+#endif // Конец заданий 1 и 2
+
+
+
+
+
+
+#if defined(USE_OPENBLAS) || defined(USE_MKL)
+
+    // ========================================================
+    // ЗАДАНИЕ 3. СРАВНЕНИЕ С BLAS-БИБЛИОТЕКАМИ
+    //
+    // Сравниваем нашу параллельную реализацию DGEMM
+    // с OpenBLAS или Intel MKL.
+    //
+    // N = 500, 1000, 1500
+    // P = 1, 2, 4, 8, 16, 24
+    //
+    // Для каждой реализации - 10 измерений.
+    //
+    // Результаты записываем в отдельный CSV.
+    // ========================================================
+
+
+    // ========================================================
+    // Выбор библиотеки и имени CSV
+    // ========================================================
+
+#ifdef USE_MKL
+
+    const char* library_name = "MKL";
+    const char* filename = "gemm_mkl_results.csv";
+
+#else
+
+    const char* library_name = "OpenBLAS";
+    const char* filename = "gemm_openblas_results.csv";
+
+#endif
+
+
+    // ========================================================
+    // CSV для третьего задания
+    // ========================================================
+
+    FILE* library_csv = fopen(filename, "w");
+
+    if (library_csv == nullptr) {
+        printf("Ошибка открытия CSV для задания 3\n");
+        return 1;
+    }
+
+    fprintf(
+        library_csv,
+        "N,threads,implementation,time_sec,gflops\n"
+    );
+
+
+    // ========================================================
+    // Количество потоков
+    // ========================================================
+
+    int library_threads[] = {
+        1, 2, 4, 8, 16, 24
+    };
+
+    int library_num_tests =
+        sizeof(library_threads) /
+        sizeof(library_threads[0]);
+
+
+    // ========================================================
+    // Перебираем размеры матриц
+    //
+    // matrix_sizes[] и num_sizes уже определены
+    // в начале main().
+    // ========================================================
+
+    for (int size_id = 0; size_id < num_sizes; size_id++) {
+
+        int N = matrix_sizes[size_id];
+
+
+        // ====================================================
+        // Выделение памяти
+        // ====================================================
+
+        double* A = alloc_matrix(N);
+        double* B = alloc_matrix(N);
+
+        double* C_our = alloc_matrix(N);
+        double* C_library = alloc_matrix(N);
+
+
+        // ====================================================
+        // Инициализация исходных матриц
+        // ====================================================
+
+        init_matrix(A, N);
+        init_matrix(B, N);
+
+
+        // ====================================================
+        // Перебираем количество потоков
+        // ====================================================
+
+        for (int p = 0; p < library_num_tests; p++) {
+
+            int threads = library_threads[p];
+
+            if (threads > omp_get_num_procs()) {
+                continue;
+            }
+
+
+            // =================================================
+            // Установка числа потоков
+            //
+            // Наша реализация использует OpenMP.
+            // Библиотека управляет своими потоками отдельно.
+            // =================================================
+
+            omp_set_num_threads(threads);
+
+#ifdef USE_MKL
+
+            mkl_set_dynamic(0);
+            mkl_set_num_threads(threads);
+
+#else
+
+            openblas_set_num_threads(threads);
+
+#endif
+
+
+            // =================================================
+            // Прогрев перед измерениями
+            //
+            // По одному запуску каждой реализации
+            // без включения результата в среднее время.
+            //
+            // Это уменьшает влияние первого вызова
+            // и первоначальной подготовки потоков.
+            // =================================================
+
+            double warmup_elapsed;
+
+            blas_dgemm(
+                N, N, N,
+                A, B, C_our,
+                warmup_elapsed
+            );
+
+            cblas_dgemm(
+                CblasColMajor,
+                CblasNoTrans,
+                CblasNoTrans,
+                N, N, N,
+                1.0,
+                A, N,
+                B, N,
+                0.0,
+                C_library, N
+            );
+
+
+            // =================================================
+            // Измерение нашей реализации - 10 запусков
+            // =================================================
+
+            double our_time = measure_parallel(
+                N, N, N,
+                A, B, C_our
+            );
+
+
+            // =================================================
+            // Измерение библиотеки - 10 запусков
+            // =================================================
+
+            double library_time = measure_library(
+                N,
+                A, B, C_library
+            );
+
+
+            // =================================================
+            // Проверка правильности
+            //
+            // Сравниваем результаты двух реализаций.
+            // Время проверки не входит в измерения.
+            // =================================================
+
+            double max_diff = compare_matrices(
+                C_our,
+                C_library,
+                N
+            );
+
+            if (!std::isfinite(max_diff) || max_diff >= EPS) {
+
+                printf(
+                    "CHECK FAILED: %s, N=%d, P=%d, diff=%.12e\n",
+                    library_name,
+                    N,
+                    threads,
+                    max_diff
+                );
+
+                free(A);
+                free(B);
+                free(C_our);
+                free(C_library);
+
+                fclose(library_csv);
+
+                return 1;
+            }
+
+
+            // =================================================
+            // GFLOPS нашей реализации
+            // =================================================
+
+            double our_gflops = calculate_gflops(
+                N, N, N,
+                our_time
+            );
+
+
+            // =================================================
+            // GFLOPS библиотеки
+            // =================================================
+
+            double library_gflops = calculate_gflops(
+                N, N, N,
+                library_time
+            );
+
+
+            // =================================================
+            // Запись результатов в CSV
+            //
+            // Для каждого P записываем две строки:
+            //
+            // 1) Наш OpenMP DGEMM
+            // 2) OpenBLAS или Intel MKL
+            // =================================================
+
+            fprintf(
+                library_csv,
+                "%d,%d,OurOpenMP,%.9f,%.6f\n",
+                N,
+                threads,
+                our_time,
+                our_gflops
+            );
+
+            fprintf(
+                library_csv,
+                "%d,%d,%s,%.9f,%.6f\n",
+                N,
+                threads,
+                library_name,
+                library_time,
+                library_gflops
+            );
+        }
+
+
+        // ====================================================
+        // Освобождение памяти
+        // ====================================================
+
+        free(A);
+        free(B);
+        free(C_our);
+        free(C_library);
+    }
+
+
+    // ========================================================
+    // Закрытие CSV
+    // ========================================================
+
+    fclose(library_csv);
+
+    printf(
+        "Task 3 complete: %s\n",
+        filename
+    );
+
+#endif
+
+
+    return 0;
+}
