@@ -1,0 +1,104 @@
+========================================
+FINAL DGEMM EXPERIMENT
+========================================
+Job ID: 4392460
+Node: cn-036
+CPUs: 24
+Directory: /home/dpodolin/gemm_final
+Model name:                              Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz
+Thread(s) per core:                      1
+Core(s) per socket:                      24
+Socket(s):                               2
+
+========== TASKS 1 AND 2 ==========
+OpenMP DGEMM demo
+Matrix sizes: 500, 1000, 1500
+Max OpenMP threads: 24
+
+==================================================
+N = 500
+==================================================
+
+Sequential
+-----------------
+Average time = 0.042730 sec
+GFLOPS       = 5.851
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       0.048008        5.208        0.890
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.024398        10.247        1.751
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.012764        19.587        3.348
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.006428        38.893        6.648
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.003268        76.495        13.074
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.002168        115.303        19.707
+              CHECK: OK | Max difference = 0.000000000000e+00
+
+==================================================
+N = 1000
+==================================================
+
+Sequential
+-----------------
+Average time = 0.333996 sec
+GFLOPS       = 5.988
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       0.379583        5.269        0.880
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.196610        10.172        1.699
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.099288        20.143        3.364
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.049776        40.180        6.710
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.025079        79.749        13.318
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.017445        114.644        19.145
+              CHECK: OK | Max difference = 0.000000000000e+00
+
+==================================================
+N = 1500
+==================================================
+
+Sequential
+-----------------
+Average time = 1.411314 sec
+GFLOPS       = 4.783
+
+Parallel
+--------------------------------------------------
+Threads       Time (sec)       GFLOPS       Speedup
+--------------------------------------------------
+      1       1.743134        3.872        0.810
+              CHECK: OK | Max difference = 0.000000000000e+00
+      2       0.924975        7.297        1.526
+              CHECK: OK | Max difference = 0.000000000000e+00
+      4       0.436921        15.449        3.230
+              CHECK: OK | Max difference = 0.000000000000e+00
+      8       0.233597        28.896        6.042
+              CHECK: OK | Max difference = 0.000000000000e+00
+     16       0.116202        58.089        12.145
+              CHECK: OK | Max difference = 0.000000000000e+00
+     24       0.090664        74.451        15.566
+              CHECK: OK | Max difference = 0.000000000000e+00
+Tasks 1 and 2 completed
+
+========== TASK 3: OPENBLAS ==========
+Task 3 complete: gemm_openblas_results.csv
+OpenBLAS completed
+
+========== TASK 3: MKL ==========
+Task 3 complete: gemm_mkl_results.csv
+MKL completed
+All completed
